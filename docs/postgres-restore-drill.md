@@ -4,7 +4,8 @@ Verifies, on a schedule, that backups are actually recoverable by restoring
 into an **isolated** environment. The drill never touches production data and
 records duration and outcome so recovery confidence is measurable.
 
-The drill is implemented as `scripts/postgres-restore-drill.sh`, with tests in
+The drill is implemented as `scripts/postgres-restore-drill.sh`, scheduled by
+`.github/workflows/postgres-restore-drill.yml`, with tests in
 `scripts/__tests__/postgres-restore-drill.test.sh`.
 
 ---
@@ -48,10 +49,24 @@ bash scripts/__tests__/postgres-restore-drill.test.sh
 
 ## 3. Frequency
 
-- [ ] Run the drill on a **scheduled cadence** (e.g. weekly) using CI or a
+The drill runs from `.github/workflows/postgres-restore-drill.yml` every
+Monday at 03:00 UTC, and can be started by hand with `workflow_dispatch`.
+
+- [x] Run the drill on a **scheduled cadence** (e.g. weekly) using CI or a
       scheduled job, not ad hoc.
 - [ ] Record the last successful drill date and keep it visible (e.g. a badge
       or a comment in the ops dashboard).
+
+The workflow needs two repository secrets:
+
+| Secret | Meaning |
+| --- | --- |
+| `XCONFESS_RESTORE_TARGET` | Connection string for the isolated drill database |
+| `XCONFESS_BACKUP_URL` | URL the workflow downloads the backup artifact from |
+
+Until both are set the scheduled run exits successfully without restoring
+anything and says so in the job summary, so an unconfigured repository never
+shows a red drill. Each run appends the drill report to the job summary.
 
 ---
 

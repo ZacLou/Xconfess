@@ -1,0 +1,68 @@
+name: Restore Drill
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    name: Restore drill
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check drill configuration
+        id: config
+        env:
+          TARGET: ${{ secrets.XCONFESS_RESTORE_TARGET }}
+          BACKUP_URL: ${{ secrets.XCONFESS_BACKUP_URL }}
+        run: |
+          if [ -z "$TARGET" ] || [ -z "$BACKUP_URL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Restore drill skipped"
+              echo ""
+              echo "Set XCONFESS_RESTORE_TARGET and XCONFESS_BACKUP_URL to enable the weekly drill."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install PostgreSQL client
+        if: steps.config.outputs.configured == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      - name: Fetch backup artifact
+        if: steps.config.outputs.configured == 'true'
+        env:
+          BACKUP_URL: ${{ secrets.XCONFESS_BACKUP_URL }}
+        run: |
+          backup="$RUNNER_TEMP/backup.dump"
+          curl --fail --silent --show-error --location "$BACKUP_URL" --output "$backup"
+          echo "fetched $(wc -c < "$backup") bytes"
+
+      - name: Run drill
+        if: steps.config.outputs.configured == 'true'
+        env:
+          XCONFESS_RESTORE_TARGET: ${{ secrets.XCONFESS_RESTORE_TARGET }}
+          XCONFESS_BACKUP_FILE: ${{ runner.temp }}/backup.dump
+          XCONFESS_DRILL_REPORT: ${{ runner.temp }}/restore-drill-report.log
+        run: bash scripts/postgres-restore-drill.sh
+
+      - name: Publish drill report
+        if: always() && steps.config.outputs.configured == 'true'
+        run: |
+          report="$RUNNER_TEMP/restore-drill-report.log"
+          if [ -f "$report" ]; then
+            echo "### Restore drill report" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
